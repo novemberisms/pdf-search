@@ -1,0 +1,10 @@
+version: 2
+sql:
+  - engine: "sqlite"
+    schema: "./db/schema.sql"
+    queries: "./db/queries"
+    gen:
+      go:
+        package: "db"
+        out: "db"
+        query_parameter_limit: 3

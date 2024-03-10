@@ -1,0 +1,10 @@
+# ignore common ide files
+.idea
+.vscode
+.project
+
+# ignore data files
+*.db
+
+# ignore test pdf folder
+test_pdfs
