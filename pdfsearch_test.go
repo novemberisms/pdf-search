@@ -143,3 +143,45 @@ func TestPdfSearcher_Search(t *testing.T) {
 		}
 	})
 }
+
+func TestPdfSearcher_IndexTxtFile(t *testing.T) {
+	t.Run("reads and indexes a txt file", func(t *testing.T) {
+		p, err := NewPdfSearcher(PdfSearcherOptions{
+			DatabaseName: ":memory:",
+			Log:          func(s string) { fmt.Println(s) },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+
+		err = p.IndexTxtFile(context.Background(), "test_pdfs/test.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		indexed, err := p.IsIndexed(context.Background(), "test_pdfs/test.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !indexed {
+			t.Errorf("file not indexed")
+		}
+
+		// try searching for a phrase in the file, including some minor whitespace and punctuation differences
+		var searchPhrase = `There is NO   reCommeñdatioñ for or against transcranial magnetic stimulation and repetitive transcranial magnetic stimulation(rTMS) for patients with anxiety disorders.
+Strength of Evidence - No Recommendation,???Insufficient Evidence(I) Level of Confidence - Low`
+
+		results, err := p.Search(context.Background(), searchPhrase, "test_pdfs/test.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Errorf("got %d results, want 1", len(results))
+		}
+		// check that the result is the correct page
+		if results[0].Page != 107 {
+			t.Errorf("got page %d, want 107", results[0].Page)
+		}
+	})
+}

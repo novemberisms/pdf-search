@@ -1,6 +1,7 @@
 package pdfsearch
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -72,10 +73,10 @@ func (p *PdfSearcher) IsIndexed(ctx context.Context, filepath string) (bool, err
 	return isIndexed != 0, nil
 }
 
-func (p *PdfSearcher) IndexFile(ctx context.Context, filepath string) error {
-	// we need to ensure that the file exists and is a pdf
-	if !strings.HasSuffix(filepath, ".pdf") {
-		return fmt.Errorf("file is not a pdf")
+func (p *PdfSearcher) IndexTxtFile(ctx context.Context, filepath string) error {
+	// we need to ensure that the file exists and is a txt
+	if !strings.HasSuffix(filepath, ".txt") {
+		return fmt.Errorf("file is not a txt")
 	}
 
 	if _, err := os.Stat(filepath); errors.Is(err, os.ErrNotExist) {
@@ -85,6 +86,55 @@ func (p *PdfSearcher) IndexFile(ctx context.Context, filepath string) error {
 	// then, we need to clear out any existing entries for this file
 	if err := p.queries.DeleteTextsByFile(ctx, filepath); err != nil {
 		return err
+	}
+
+	// acquire a handle to the file and iterate over each line
+	file, err := os.Open(filepath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// iterate over each line in the txt file
+	scanner := bufio.NewScanner(file)
+
+	currentPageNo := 1
+	currentPageText := strings.Builder{}
+
+	p.log("indexing " + filepath)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// if the line begins with the marker START OF PAGE xx, then we update the current page number to xx
+		if strings.HasPrefix(line, "START OF PAGE ") {
+			// update the current page number
+			_, err := fmt.Sscanf(line, "START OF PAGE %d", &currentPageNo)
+			if err != nil {
+				return err
+			}
+			p.log(fmt.Sprintf("page %d found", currentPageNo))
+			continue
+		}
+
+		// if the line begins with the marker END OF PAGE xx, then we need to save the current page text and
+		// reset the string builder
+		if strings.HasPrefix(line, "END OF PAGE ") {
+			// if we have any text in the current page, then we need to save it
+			if err := p.createText(filepath, int64(currentPageNo), currentPageText.String()); err != nil {
+				return err
+			}
+			p.log(fmt.Sprintf("page %d indexed", currentPageNo))
+			currentPageText.Reset()
+			continue
+		}
+
+		// otherwise, we trim the line and add it to the current page text if it's not empty
+		line = strings.TrimSpace(line)
+		if line != "" {
+			currentPageText.WriteString(line)
+			currentPageText.WriteString("\n")
+		}
 	}
 
 	return nil
@@ -132,7 +182,7 @@ func transformText(text string) string {
 	// for example, "á" will be converted to "a".
 	text = norm.NFKD.String(text)
 
-	var result strings.Builder // Efficient way to build strings
+	var result strings.Builder
 	for _, char := range text {
 		if unicode.IsLetter(char) || unicode.IsDigit(char) {
 			result.WriteRune(unicode.ToLower(char)) // Convert letters to lowercase and add them
